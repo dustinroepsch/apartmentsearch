@@ -58,17 +58,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let google_maps_client = ClientSettings::new(API_KEY);
 
-    println!("Valery Work to Dustin Work: ");
-    println!(
-        "{}",
-        summarize(
-            &google_maps_client,
-            valery_work_address.clone(),
-            dustin_work_address.clone()
-        )
-        .await
-        .ok_or("Failed to look up directions")?
-    );
     println!("Valery Work to Apartment: ");
     println!(
         "{}",
@@ -80,6 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .ok_or("Failed to look up directions")?
     );
+
     println!("Dustin Work to Apartment: ");
     println!(
         "{}",

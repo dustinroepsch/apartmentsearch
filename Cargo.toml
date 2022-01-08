@@ -10,4 +10,5 @@ google_maps = "2.1"
 rust_decimal = "1"
 rust_decimal_macros = "1"
 structopt = "0.3"
+tokio = { version = "1.15.0", features = ["full"] }
 derive_more = "0.99"

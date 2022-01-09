@@ -1,11 +1,13 @@
+#![deny(clippy::pedantic)]
+
 use google_maps::directions::{Location, TravelMode};
 use google_maps::prelude::Duration;
 use google_maps::ClientSettings;
 use std::fs::File;
 
-use std::error::Error;
 use std::io::{BufRead, BufReader};
 
+use anyhow::Error;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use std::ops::Add;
@@ -29,16 +31,18 @@ async fn summarize_direction_time(
     client: &ClientSettings,
     a: Location,
     b: Location,
-) -> Option<String> {
-    let route = client
-        .directions(a, b)
+) -> Result<String, Error> {
+    let response = client
+        .directions(a.clone(), b.clone())
         .with_travel_mode(TravelMode::Driving)
         .execute()
-        .await
-        .ok()?
+        .await?;
+
+    let route = response
         .routes
-        .first()?
-        .clone();
+        .first()
+        .ok_or_else(|| return Ok::<String, Error>(format!("No route from {:?} to {:?}", a, b)))
+        .unwrap();
 
     let duration: Duration = route
         .legs
@@ -51,13 +55,14 @@ async fn summarize_direction_time(
     if duration.num_seconds() % 60 > 30 {
         minutes += 1;
     }
-    Some(format!(
+
+    Ok(format!(
         "Total time: {} hours and {} minutes ",
         hours, minutes
     ))
 }
 
-async fn search_and_summarize(client: &ClientSettings, address: String) -> Option<String> {
+async fn search_and_summarize(client: &ClientSettings, address: String) -> Result<String, Error> {
     // Microsoft Studio C
     let dustin_work_address: Location =
         Location::PlaceId(String::from("ChIJz85LumxtkFQRhW-lYWwmRpM"));
@@ -67,7 +72,7 @@ async fn search_and_summarize(client: &ClientSettings, address: String) -> Optio
 
     let address_location = Location::Address(address.to_string());
 
-    Some(format!(
+    Ok(format!(
         "Dustin -> {}: {}\nValery -> {}: {}",
         address,
         summarize_direction_time(client, dustin_work_address, address_location.clone()).await?,
@@ -77,7 +82,7 @@ async fn search_and_summarize(client: &ClientSettings, address: String) -> Optio
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     const API_KEY: &str = include_str!("../api_key.txt");
 
     let google_maps_client = ClientSettings::new(API_KEY);
@@ -88,25 +93,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Opt::Search { query } => {
             println!(
                 "{}",
-                search_and_summarize(&google_maps_client, query.clone())
-                    .await
-                    .ok_or(format!("Couldn't summarize for query: {}", query))?
-            )
+                search_and_summarize(&google_maps_client, query.clone()).await?
+            );
         }
         Opt::Summarize { file } => {
             let file = File::open(file).expect("Couldn't open file");
             let reader = BufReader::new(file);
             let mut futures: FuturesUnordered<_> = reader
                 .lines()
-                .filter_map(|line| line.ok())
+                .filter_map(std::result::Result::ok)
                 .map(|address| search_and_summarize(&google_maps_client, address))
                 .collect();
 
             while let Some(result) = futures.next().await {
-                if let Some(summary) = result {
-                    println!("{}", summary);
-                } else {
-                    eprintln!("Warning: This message means there was a summary that didn't get created successfully. :(")
+                match result {
+                    Ok(summary) => {
+                        println!("{}", summary);
+                    }
+                    Err(error) => {
+                        eprintln!("{}", error);
+                    }
                 }
             }
         }

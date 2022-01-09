@@ -43,11 +43,18 @@ async fn summarize_direction_time(
         .map(|leg| leg.duration.value)
         .fold(Duration::zero(), Duration::add);
     let hours = duration.num_hours();
-    let minutes = duration.num_minutes() % 60;
-    Some(format!("Total time: {}:{} ", hours, minutes))
+    let mut minutes = duration.num_minutes() % 60;
+    //round up if we are less than thirty seconds from minute + 1
+    if duration.num_seconds() % 60 > 30 {
+        minutes += 1;
+    }
+    Some(format!(
+        "Total time: {} hours and {} minutes ",
+        hours, minutes
+    ))
 }
 
-async fn search_and_summarize(client: &ClientSettings, address: &str) -> Option<String> {
+async fn search_and_summarize(client: &ClientSettings, address: String) -> Option<String> {
     // Microsoft Studio C
     let dustin_work_address: Location =
         Location::PlaceId(String::from("ChIJz85LumxtkFQRhW-lYWwmRpM"));
@@ -78,7 +85,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Opt::Search { query } => {
             println!(
                 "{}",
-                search_and_summarize(&google_maps_client, &query)
+                search_and_summarize(&google_maps_client, query.clone())
                     .await
                     .ok_or(format!("Couldn't summarize for query: {}", query))?
             )
@@ -86,21 +93,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Opt::Summarize { file } => {
             let file = File::open(file).expect("Couldn't open file");
             let reader = BufReader::new(file);
-            let mut futures = FuturesUnordered::new();
-            for address in reader.lines() {
-                if let Ok(address) = address {
-                    futures.push(search_and_summarize(&google_maps_client, address))
-                }
-            }
-            loop {
-                match futures.next().await {
-                    Some(Some(summary)) => {
-                        println!("{}", summary)
-                    },
-                    None => {
-                        break;
-                    },
-                    _ => ()
+            let mut futures: FuturesUnordered<_> = reader
+                .lines()
+                .filter_map(|line| line.ok())
+                .map(|address| search_and_summarize(&google_maps_client, address))
+                .collect();
+
+            while let Some(result) = futures.next().await {
+                if let Some(summary) = result {
+                    println!("{}", summary);
+                } else {
+                    eprintln!("Warning: This message means there was a summary that didn't get created successfully. :(")
                 }
             }
         }

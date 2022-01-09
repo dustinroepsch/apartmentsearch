@@ -18,8 +18,11 @@ enum Opt {
         /// The string to search with the google maps direction api
         query: String,
     },
-    /// Search for all the addresses in a file. Each line in the input should be an address.
-    Summarize { file: PathBuf },
+    /// Search for all the addresses in a file
+    Summarize {
+        /// The file which should contain one address per line
+        file: PathBuf,
+    },
 }
 
 async fn summarize_direction_time(

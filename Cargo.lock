@@ -201,6 +201,7 @@ name = "find_apt"
 version = "0.1.0"
 dependencies = [
  "derive_more",
+ "futures",
  "google_maps",
  "rust_decimal",
  "rust_decimal_macros",

@@ -1,8 +1,10 @@
 use anyhow::Error;
+use derive_more::{From, Into};
+
 use std::str::FromStr;
 
 pub const DEFAULT_STARTING_POINTS: &str =
-    "ChIJz85LumxtkFQRhW-lYWwmRpM:Microsoft ChIJRe_JoxEBkFQRbaakkmkDFk0:Boeing";
+    "ChIJz85LumxtkFQRhW-lYWwmRpM:Microsoft,ChIJRe_JoxEBkFQRbaakkmkDFk0:Boeing";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StartingPoint {
@@ -27,5 +29,39 @@ impl FromStr for StartingPoint {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (place_id, display_name) = s.split_once(':').unwrap();
         Ok(StartingPoint::new(place_id, display_name))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct StartingPoints(Vec<StartingPoint>);
+
+impl FromStr for StartingPoints {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let point_parse_results: Vec<_> = s
+            .split(',')
+            .map(str::parse)
+            .collect();
+
+        let mut points = Vec::new();
+        let mut errors = Vec::new();
+
+        for result in point_parse_results {
+            match result {
+                Ok(point) => points.push(point),
+                Err(err) => errors.push(err),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(StartingPoints(points))
+        } else {
+            let mut error = errors.pop().unwrap();
+            while let Some(next_error) = errors.pop() {
+                error = error.context(next_error);
+            }
+            Err(error)
+        }
     }
 }

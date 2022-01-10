@@ -13,7 +13,7 @@ use anyhow::Error;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use lazy_static::lazy_static;
-use starting_point::{StartingPoint, DEFAULT_STARTING_POINTS};
+use starting_point::{StartingPoint, StartingPoints, DEFAULT_STARTING_POINTS};
 use std::ops::Add;
 use std::path::PathBuf;
 
@@ -25,6 +25,7 @@ const API_KEY: &str = include_str!("../api_key.txt");
 lazy_static! {
     static ref CLIENT_SETTINGS: ClientSettings = ClientSettings::new(API_KEY);
 }
+
 #[derive(Debug, StructOpt)]
 enum Opt {
     /// Search using one address provided on the cli
@@ -36,7 +37,7 @@ enum Opt {
             short, long,
             default_value = DEFAULT_STARTING_POINTS,
         )]
-        starting_points: Vec<StartingPoint>,
+        starting_points: StartingPoints,
     },
     /// Search for all the addresses in a file
     Summarize {
@@ -46,7 +47,7 @@ enum Opt {
             short, long,
             default_value = DEFAULT_STARTING_POINTS,
         )]
-        starting_points: Vec<StartingPoint>,
+        starting_points: StartingPoints,
     },
 }
 
@@ -112,7 +113,7 @@ async fn main() -> Result<(), Error> {
         Opt::Search {
             query,
             starting_points,
-        } => FuturesUnordered::from_iter(search_and_summarize(starting_points, &query)),
+        } => FuturesUnordered::from_iter(search_and_summarize(starting_points.into(), &query)),
         Opt::Summarize {
             file,
             starting_points,
@@ -121,7 +122,7 @@ async fn main() -> Result<(), Error> {
             let flattened: Vec<_> = BufReader::new(file)
                 .lines()
                 .filter_map(std::result::Result::ok)
-                .flat_map(|address| search_and_summarize(starting_points.clone(), &address))
+                .flat_map(|address| search_and_summarize(starting_points.clone().into(), &address))
                 .collect();
             FuturesUnordered::from_iter(flattened)
         }

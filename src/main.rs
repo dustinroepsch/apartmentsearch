@@ -9,7 +9,7 @@ use std::future::Future;
 
 use std::io::{BufRead, BufReader};
 
-use anyhow::Error;
+use anyhow::{anyhow, Context, Error};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use lazy_static::lazy_static;
@@ -56,7 +56,12 @@ async fn summarize_direction_time(a: Location, b: Location) -> Result<String, Er
         .directions(a.clone(), b.clone())
         .with_travel_mode(TravelMode::Driving)
         .execute()
-        .await?;
+        .await
+        .context(anyhow!(
+            "Error getting directions from {:?} to {:?}",
+            a.clone(),
+            b.clone()
+        ))?;
 
     let route = response
         .routes
@@ -144,7 +149,7 @@ async fn main() -> Result<(), Error> {
     if errors.is_empty() {
         Ok(())
     } else {
-        let mut error = Error::msg("There were errors while executing tasks.");
+        let mut error = anyhow!("There were errors while executing tasks.");
         while let Some(context_error) = errors.pop() {
             error = error.context(context_error);
         }

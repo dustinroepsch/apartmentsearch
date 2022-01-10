@@ -3,6 +3,7 @@
 use google_maps::directions::{Location, TravelMode};
 use google_maps::prelude::Duration;
 use google_maps::ClientSettings;
+
 use std::fs::File;
 use std::future::Future;
 
@@ -104,7 +105,7 @@ fn search_and_summarize(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Error> {
     let opt = Opt::from_args();
 
     let mut futures: FuturesUnordered<_> = match opt {
@@ -138,5 +139,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let mut error = Error::msg("There were errors while executing tasks.");
+        while let Some(context_error) = errors.pop() {
+            error = error.context(context_error);
+        }
+
+        Err(error)
+    }
 }

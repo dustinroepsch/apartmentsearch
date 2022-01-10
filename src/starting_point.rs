@@ -27,7 +27,7 @@ impl FromStr for StartingPoint {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (place_id, display_name) = s.split_once(':').context(anyhow!(
+        let (place_id, display_name) = s.split_once(':').context(format!(
             "Error splitting \"{}\" exactly once on the delimiter ':'.",
             s
         ))?;

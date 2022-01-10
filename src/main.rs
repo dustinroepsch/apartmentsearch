@@ -57,23 +57,22 @@ async fn summarize_direction_time(a: Location, b: Location) -> Result<String, Er
         .with_travel_mode(TravelMode::Driving)
         .execute()
         .await
-        .context(anyhow!(
-            "Error getting directions from {:?} to {:?}",
+        .context(format!(
+            "Error getting directions from {:?} to {:?}.",
             a.clone(),
             b.clone()
         ))?;
 
-    let route = response
-        .routes
-        .first()
-        .ok_or_else(|| return Ok::<String, Error>(format!("No route from {:?} to {:?}", a, b)))
-        .unwrap();
+    let route = response.routes.first().ok_or(anyhow!(
+        "The list of routes returned from google was empty."
+    ))?;
 
     let duration: Duration = route
         .legs
         .iter()
         .map(|leg| leg.duration.value)
         .fold(Duration::zero(), Duration::add);
+
     let hours = duration.num_hours();
     let mut minutes = duration.num_minutes() % 60;
     //round up if we are less than thirty seconds from minute + 1

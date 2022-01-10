@@ -4,35 +4,53 @@ use google_maps::directions::{Location, TravelMode};
 use google_maps::prelude::Duration;
 use google_maps::ClientSettings;
 use std::fs::File;
+use std::future::Future;
 
 use std::io::{BufRead, BufReader};
 
 use anyhow::Error;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
+use lazy_static::lazy_static;
+use starting_point::{StartingPoint, DEFAULT_STARTING_POINTS};
 use std::ops::Add;
 use std::path::PathBuf;
+
 use structopt::StructOpt;
 
+mod starting_point;
+
+const API_KEY: &str = include_str!("../api_key.txt");
+lazy_static! {
+    static ref CLIENT_SETTINGS: ClientSettings = ClientSettings::new(API_KEY);
+}
 #[derive(Debug, StructOpt)]
 enum Opt {
+    /// Search using one address provided on the cli
     Search {
         /// The string to search with the google maps direction api
         query: String,
+
+        #[structopt(
+            short, long,
+            default_value = DEFAULT_STARTING_POINTS,
+        )]
+        starting_points: Vec<StartingPoint>,
     },
     /// Search for all the addresses in a file
     Summarize {
         /// The file which should contain one address per line
         file: PathBuf,
+        #[structopt(
+            short, long,
+            default_value = DEFAULT_STARTING_POINTS,
+        )]
+        starting_points: Vec<StartingPoint>,
     },
 }
 
-async fn summarize_direction_time(
-    client: &ClientSettings,
-    a: Location,
-    b: Location,
-) -> Result<String, Error> {
-    let response = client
+async fn summarize_direction_time(a: Location, b: Location) -> Result<String, Error> {
+    let response = CLIENT_SETTINGS
         .directions(a.clone(), b.clone())
         .with_travel_mode(TravelMode::Driving)
         .execute()
@@ -62,60 +80,63 @@ async fn summarize_direction_time(
     ))
 }
 
-async fn search_and_summarize(client: &ClientSettings, address: String) -> Result<String, Error> {
-    // Microsoft Studio C
-    let dustin_work_address: Location =
-        Location::PlaceId(String::from("ChIJz85LumxtkFQRhW-lYWwmRpM"));
-    // Boeing 40-87
-    let valery_work_address: Location =
-        Location::PlaceId(String::from("ChIJRe_JoxEBkFQRbaakkmkDFk0"));
+fn search_and_summarize(
+    starting_points: Vec<StartingPoint>,
+    ending_address: &str,
+) -> Vec<impl Future<Output = Result<String, Error>>> {
+    let ending_location = Location::Address(ending_address.to_string());
 
-    let address_location = Location::Address(address.to_string());
+    let mut futures: Vec<_> = Vec::new();
 
-    Ok(format!(
-        "Dustin -> {}: {}\nValery -> {}: {}",
-        address,
-        summarize_direction_time(client, dustin_work_address, address_location.clone()).await?,
-        address,
-        summarize_direction_time(client, valery_work_address, address_location).await?
-    ))
+    for starting_point in starting_points {
+        let starting_location = Location::PlaceId(starting_point.place_id);
+        let starting_name = starting_point.display_name.clone();
+        let ending_address = ending_address.to_string();
+        let future = summarize_direction_time(starting_location, ending_location.clone());
+        futures.push(future.map(move |result| {
+            result.map(|time_summary| {
+                format!("{} -> {}: {}", starting_name, ending_address, time_summary)
+            })
+        }));
+    }
+
+    futures
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const API_KEY: &str = include_str!("../api_key.txt");
-
-    let google_maps_client = ClientSettings::new(API_KEY);
-
     let opt = Opt::from_args();
 
-    match opt {
-        Opt::Search { query } => {
-            println!(
-                "{}",
-                search_and_summarize(&google_maps_client, query.clone()).await?
-            );
-        }
-        Opt::Summarize { file } => {
+    let mut futures: FuturesUnordered<_> = match opt {
+        Opt::Search {
+            query,
+            starting_points,
+        } => FuturesUnordered::from_iter(search_and_summarize(starting_points, &query)),
+        Opt::Summarize {
+            file,
+            starting_points,
+        } => {
             let file = File::open(file).expect("Couldn't open file");
-            let reader = BufReader::new(file);
-            let mut futures: FuturesUnordered<_> = reader
+            let flattened: Vec<_> = BufReader::new(file)
                 .lines()
                 .filter_map(std::result::Result::ok)
-                .map(|address| search_and_summarize(&google_maps_client, address))
+                .flat_map(|address| search_and_summarize(starting_points.clone(), &address))
                 .collect();
-
-            while let Some(result) = futures.next().await {
-                match result {
-                    Ok(summary) => {
-                        println!("{}", summary);
-                    }
-                    Err(error) => {
-                        eprintln!("{}", error);
-                    }
-                }
-            }
+            FuturesUnordered::from_iter(flattened)
         }
     };
+
+    let mut errors: Vec<Error> = Vec::new();
+
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok(summary) => {
+                println!("{}", summary);
+            }
+            Err(error) => {
+                errors.push(error);
+            }
+        }
+    }
     Ok(())
 }

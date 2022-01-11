@@ -3,6 +3,10 @@ name = "find_apt"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+lto = true
+panic = "abort"
+
 [dependencies]
 anyhow = "1.0"
 derive_more = "0.99"

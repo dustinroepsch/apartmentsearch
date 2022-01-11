@@ -26,6 +26,7 @@ impl StartingPoint {
 impl FromStr for StartingPoint {
     type Err = Error;
 
+    /// The expected format is `place_id:display_name`
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (place_id, display_name) = s.split_once(':').context(format!(
             "Error splitting \"{}\" exactly once on the delimiter ':'.",
@@ -35,12 +36,14 @@ impl FromStr for StartingPoint {
     }
 }
 
+/// A wrapper aroudn Vec<StartingPoint> that can be parsed from str
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct StartingPoints(Vec<StartingPoint>);
 
 impl FromStr for StartingPoints {
     type Err = Error;
 
+    /// The expected format is a comma seperated list of starting points
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let point_parse_results: Vec<_> = s.split(',').map(str::parse).collect();
 
@@ -57,7 +60,7 @@ impl FromStr for StartingPoints {
         if errors.is_empty() {
             Ok(StartingPoints(points))
         } else {
-            let mut error = anyhow!("All of these errors occured while executing tasks.");
+            let mut error = anyhow!("Error while parsing at least one starting point.");
             while let Some(next_error) = errors.pop() {
                 error = error.context(next_error);
             }

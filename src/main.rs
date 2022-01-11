@@ -22,24 +22,26 @@ use structopt::StructOpt;
 mod starting_point;
 
 const API_KEY: &str = include_str!("../api_key.txt");
+
 lazy_static! {
     static ref CLIENT_SETTINGS: ClientSettings = ClientSettings::new(API_KEY);
 }
 
 #[derive(Debug, StructOpt)]
 enum Opt {
-    /// Search using one address provided on the cli
+    /// Search one address against a list of starting point
     Search {
-        /// The string to search with the google maps direction api
-        query: String,
+        /// The address to test every starting point against
+        address: String,
 
         #[structopt(
             short, long,
             default_value = DEFAULT_STARTING_POINTS,
         )]
+        /// The starting points that will be tested. Formatted as a comma separated list of place_id:nickname elements
         starting_points: StartingPoints,
     },
-    /// Search for all the addresses in a file
+    /// Run the search command for every address in a file
     Summarize {
         /// The file which should contain one address per line
         file: PathBuf,
@@ -47,6 +49,7 @@ enum Opt {
             short, long,
             default_value = DEFAULT_STARTING_POINTS,
         )]
+        /// The starting points that will be tested against every address in the input file. Formatted as a comma separated list of place_id:nickname elements
         starting_points: StartingPoints,
     },
 }
@@ -57,11 +60,13 @@ async fn summarize_direction_time(a: Location, b: Location) -> Result<String, Er
         .with_travel_mode(TravelMode::Driving)
         .execute()
         .await
-        .context(format!(
-            "Error getting directions from {:?} to {:?}.",
-            a.clone(),
-            b.clone()
-        ))?;
+        .with_context(|| {
+            format!(
+                "Error getting directions from {:?} to {:?}.",
+                a.clone(),
+                b.clone()
+            )
+        })?;
 
     let route = response.routes.first().ok_or(anyhow!(
         "The list of routes returned from google was empty."
@@ -115,7 +120,7 @@ async fn main() -> Result<(), Error> {
 
     let mut futures: FuturesUnordered<_> = match opt {
         Opt::Search {
-            query,
+            address: query,
             starting_points,
         } => FuturesUnordered::from_iter(search_and_summarize(starting_points.into(), &query)),
         Opt::Summarize {
